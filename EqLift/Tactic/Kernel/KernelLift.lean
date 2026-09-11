@@ -5,7 +5,6 @@ Authors: Gaëtan Serré
 -/
 module
 
-public import EqLift.Kernel.Lift
 public import EqLift.Tactic.Lift
 public import EqLift.Tactic.Kernel.Utils
 
@@ -15,20 +14,25 @@ public import EqLift.Tactic.Kernel.Utils
 This file contains functions that propagate the lifting of kernel expressions through several
 operators and primitives, and constructs the necessary proofs for the `lift_eq` tactic. Each
 function returns the lifted expression `e'` together with a proof of `e' = e.lift`, built by
-congruence from the compatibility lemmas of `Kernel.lift`.
+congruence from the compatibility lemmas of `Kernel.lift` (`comp_lift`, `parallelComp_lift`, ...).
 -/
 
 public meta section
 
 open Lean Meta Parser.Tactic ProbabilityTheory ProbabilityTheory.Kernel
 
-/-- Lifts a binary kernel operation `op κ η` by lifting the inner kernels. `pf` must be a proof
-of `op κ.lift η.lift = (op κ η).lift`. -/
-def liftBinary (op : Name) (κ η : Expr) (maxLvl : Level) (pf : Expr) :
+/-- The arguments shared by the compatibility lemmas of `Kernel.lift` for a kernel `Kernel X Y`:
+`X [mX] Y [mY] X' [mX'] Y' [mY'] ex ey`. -/
+def liftLemmaArgs (X Y X' Y' : Carrier) (ex ey : Expr) : MetaM (Array Expr) := do
+  return #[X.1, ← X.inst, Y.1, ← Y.inst, X'.1, ← X'.inst, Y'.1, ← Y'.inst, ex, ey]
+
+/-- Lifts a binary kernel operation by lifting the inner kernels. `mkOp` builds the operation
+from the lifted kernels, and `pf` must be a proof of `mkOp κ.lift η.lift = (mkOp κ η).lift`. -/
+def liftBinary (κ η : Expr) (maxLvl : Level) (mkOp : Expr → Expr → MetaM Expr) (pf : Expr) :
     MetaM (Expr × Expr) := do
   let (κ', pκ) ← liftExpr κ maxLvl
   let (η', pη) ← liftExpr η maxLvl
-  let e' ← mkAppM op #[κ', η']
+  let e' ← mkOp κ' η'
   let h ← mkCongr (← mkCongrArg e'.appFn!.appFn! pκ) pη
   return (e', ← mkEqTrans h pf)
 
@@ -39,12 +43,14 @@ def liftComposition (e : Expr) (maxLvl : Level) : MetaM (Expr × Expr) := do
   let args := e.getAppArgs
   let η := args[args.size - 2]!
   let κ := args[args.size - 1]!
-  let (X, Y, xLvl, yLvl) ← getTypesFromKernel η
-  let (Z, _, tLvl, _) ← getTypesFromKernel κ
-  let ex ← constructMeasurableEquiv X xLvl maxLvl
-  let ey ← constructMeasurableEquiv Y yLvl maxLvl
-  let ez ← constructMeasurableEquiv Z tLvl maxLvl
-  liftBinary ``Kernel.comp η κ maxLvl (← mkAppM ``comp_lift #[ex, ey, ez, η, κ])
+  let (X, Y) ← getCarriersFromKernel η
+  let (Z, _) ← getCarriersFromKernel κ
+  let (ex, X') ← X.lift maxLvl
+  let (ey, Y') ← Y.lift maxLvl
+  let (ez, Z') ← Z.lift maxLvl
+  let pf := mkAppN (mkConst ``comp_lift [X.2, Y.2, Z.2, maxLvl]) <|
+    (← liftLemmaArgs X Y X' Y' ex ey) ++ #[Z.1, ← Z.inst, Z'.1, ← Z'.inst, ez, η, κ]
+  liftBinary η κ maxLvl (mkKernelComp Z' X' Y') pf
 
 initialize registerLiftExpr liftComposition
 
@@ -55,14 +61,16 @@ def liftParallelComp (e : Expr) (maxLvl : Level) : MetaM (Expr × Expr) := do
   let args := e.getAppArgs
   let κ := args[args.size - 2]!
   let η := args[args.size - 1]!
-  let (X, Y, xLvl, yLvl) ← getTypesFromKernel κ
-  let (Z, T, zLvl, tLvl) ← getTypesFromKernel η
-  let ex ← constructMeasurableEquiv X xLvl maxLvl
-  let ey ← constructMeasurableEquiv Y yLvl maxLvl
-  let ez ← constructMeasurableEquiv Z zLvl maxLvl
-  let et ← constructMeasurableEquiv T tLvl maxLvl
-  liftBinary ``Kernel.parallelComp κ η maxLvl
-    (← mkAppM ``parallelComp_lift #[ex, ey, ez, et, κ, η])
+  let (X, Y) ← getCarriersFromKernel κ
+  let (Z, T) ← getCarriersFromKernel η
+  let (ex, X') ← X.lift maxLvl
+  let (ey, Y') ← Y.lift maxLvl
+  let (ez, Z') ← Z.lift maxLvl
+  let (et, T') ← T.lift maxLvl
+  let pf := mkAppN (mkConst ``parallelComp_lift [X.2, Y.2, Z.2, maxLvl, T.2]) <|
+    (← liftLemmaArgs X Y X' Y' ex ey) ++
+      #[Z.1, ← Z.inst, T.1, ← T.inst, Z'.1, ← Z'.inst, T'.1, ← T'.inst, ez, et, κ, η]
+  liftBinary κ η maxLvl (mkKernelParallelComp X' Y' Z' T') pf
 
 initialize registerLiftExpr liftParallelComp
 
@@ -73,12 +81,14 @@ def liftProd (e : Expr) (maxLvl : Level) : MetaM (Expr × Expr) := do
   let args := e.getAppArgs
   let κ := args[args.size - 2]!
   let η := args[args.size - 1]!
-  let (X, Y, xLvl, yLvl) ← getTypesFromKernel κ
-  let (_, Z, _, zLvl) ← getTypesFromKernel η
-  let ex ← constructMeasurableEquiv X xLvl maxLvl
-  let ey ← constructMeasurableEquiv Y yLvl maxLvl
-  let ez ← constructMeasurableEquiv Z zLvl maxLvl
-  liftBinary ``Kernel.prod κ η maxLvl (← mkAppM ``prod_lift #[ex, ey, ez, κ, η])
+  let (X, Y) ← getCarriersFromKernel κ
+  let (_, Z) ← getCarriersFromKernel η
+  let (ex, X') ← X.lift maxLvl
+  let (ey, Y') ← Y.lift maxLvl
+  let (ez, Z') ← Z.lift maxLvl
+  let pf := mkAppN (mkConst ``prod_lift [X.2, Y.2, Z.2, maxLvl]) <|
+    (← liftLemmaArgs X Y X' Y' ex ey) ++ #[Z.1, ← Z.inst, Z'.1, ← Z'.inst, ez, κ, η]
+  liftBinary κ η maxLvl (mkKernelProd X' Y' Z') pf
 
 initialize registerLiftExpr liftProd
 
@@ -89,12 +99,14 @@ def liftCompProd (e : Expr) (maxLvl : Level) : MetaM (Expr × Expr) := do
   let args := e.getAppArgs
   let κ := args[args.size - 2]!
   let η := args[args.size - 1]!
-  let (X, Y, xLvl, yLvl) ← getTypesFromKernel κ
-  let (_, Z, _, zLvl) ← getTypesFromKernel η
-  let ex ← constructMeasurableEquiv X xLvl maxLvl
-  let ey ← constructMeasurableEquiv Y yLvl maxLvl
-  let ez ← constructMeasurableEquiv Z zLvl maxLvl
-  liftBinary ``Kernel.compProd κ η maxLvl (← mkAppM ``compProd_lift #[ex, ey, ez, κ, η])
+  let (X, Y) ← getCarriersFromKernel κ
+  let (_, Z) ← getCarriersFromKernel η
+  let (ex, X') ← X.lift maxLvl
+  let (ey, Y') ← Y.lift maxLvl
+  let (ez, Z') ← Z.lift maxLvl
+  let pf := mkAppN (mkConst ``compProd_lift [X.2, Y.2, Z.2, maxLvl]) <|
+    (← liftLemmaArgs X Y X' Y' ex ey) ++ #[Z.1, ← Z.inst, Z'.1, ← Z'.inst, ez, κ, η]
+  liftBinary κ η maxLvl (mkKernelCompProd X' Y' Z') pf
 
 initialize registerLiftExpr liftCompProd
 
@@ -102,11 +114,10 @@ initialize registerLiftExpr liftCompProd
 def liftId (e : Expr) (maxLvl : Level) : MetaM (Expr × Expr) := do
   unless e.isAppOf ``Kernel.id do
     throwError "Expected the identity kernel, but got {e}."
-  let (X, _, xLvl, _) ← getTypesFromKernel e
-  let ex ← constructMeasurableEquiv X xLvl maxLvl
-  let (X', _) ← getTypesFromMeasurableEquiv ex
-  let mX' ← synthInstance (mkApp (mkConst ``MeasurableSpace [maxLvl]) X')
-  return (← mkAppOptM ``Kernel.id #[X', mX'], ← mkAppM ``id_lift #[ex])
+  let (X, _) ← getCarriersFromKernel e
+  let (ex, X') ← X.lift maxLvl
+  let pf := mkAppN (mkConst ``id_lift [X.2, maxLvl]) #[X.1, ← X.inst, X'.1, ← X'.inst, ex]
+  return (← mkKernelId X', pf)
 
 initialize registerLiftExpr liftId
 
@@ -114,11 +125,11 @@ initialize registerLiftExpr liftId
 def liftDiscard (e : Expr) (maxLvl : Level) : MetaM (Expr × Expr) := do
   unless e.isAppOf ``Kernel.discard do
     throwError "Expected the discard kernel, but got {e}."
-  let (X, _, xLvl, punitLvl) ← getTypesFromKernel e
-  let ex ← constructMeasurableEquiv X xLvl maxLvl
-  let (X', _) ← getTypesFromMeasurableEquiv ex
-  let discard_lift_proof ← mkAppM' (mkConst ``discard_lift [xLvl, maxLvl, punitLvl]) #[ex]
-  return (← mkAppOptM' (mkConst ``Kernel.discard [maxLvl, maxLvl]) #[X', none], discard_lift_proof)
+  let (X, (_, punitLvl)) ← getCarriersFromKernel e
+  let (ex, X') ← X.lift maxLvl
+  let pf := mkAppN (mkConst ``discard_lift [X.2, maxLvl, punitLvl])
+    #[X.1, ← X.inst, X'.1, ← X'.inst, ex]
+  return (← mkKernelDiscard X' maxLvl, pf)
 
 initialize registerLiftExpr liftDiscard
 
@@ -126,10 +137,10 @@ initialize registerLiftExpr liftDiscard
 def liftCopy (e : Expr) (maxLvl : Level) : MetaM (Expr × Expr) := do
   unless e.isAppOf ``Kernel.copy do
     throwError "Expected the copy kernel, but got {e}."
-  let (X, _, xLvl, _) ← getTypesFromKernel e
-  let ex ← constructMeasurableEquiv X xLvl maxLvl
-  let (X', _) ← getTypesFromMeasurableEquiv ex
-  return (← mkAppOptM ``Kernel.copy #[X', none], ← mkAppM ``copy_lift #[ex])
+  let (X, _) ← getCarriersFromKernel e
+  let (ex, X') ← X.lift maxLvl
+  let pf := mkAppN (mkConst ``copy_lift [X.2, maxLvl]) #[X.1, ← X.inst, X'.1, ← X'.inst, ex]
+  return (← mkKernelCopy X', pf)
 
 initialize registerLiftExpr liftCopy
 
@@ -138,32 +149,32 @@ def liftSwap (e : Expr) (maxLvl : Level) : MetaM (Expr × Expr) := do
   unless e.isAppOf ``Kernel.swap do
     throwError "Expected the swap kernel, but got {e}."
   let args := e.getAppArgs
-  let X := args[0]!
-  let Y := args[1]!
-  let ex ← constructMeasurableEquiv X (← getDecLevel X) maxLvl
-  let ey ← constructMeasurableEquiv Y (← getDecLevel Y) maxLvl
-  let (X', _) ← getTypesFromMeasurableEquiv ex
-  let (Y', _) ← getTypesFromMeasurableEquiv ey
-  return (← mkAppOptM ``Kernel.swap #[X', Y', none, none], ← mkAppM ``swap_lift #[ex, ey])
+  let X : Carrier := (args[0]!, ← getDecLevel args[0]!)
+  let Y : Carrier := (args[1]!, ← getDecLevel args[1]!)
+  let (ex, X') ← X.lift maxLvl
+  let (ey, Y') ← Y.lift maxLvl
+  let pf := mkAppN (mkConst ``swap_lift [X.2, Y.2, maxLvl]) (← liftLemmaArgs X Y X' Y' ex ey)
+  return (← mkKernelSwap X' Y', pf)
 
 initialize registerLiftExpr liftSwap
 
 /-- Lifts a kernel using `Kernel.lift`. -/
 def liftKernel (e : Expr) (maxLvl : Level) : MetaM (Expr × Expr) := do
-  let (X, Y, xLvl, yLvl) ← getTypesFromKernel e
-  let ex ← constructMeasurableEquiv X xLvl maxLvl
-  let ey ← constructMeasurableEquiv Y yLvl maxLvl
-  let e' ← mkAppOptM ``Kernel.lift #[none, none, none, none, none, none, none, none, ex, ey, e]
+  let (X, Y) ← getCarriersFromKernel e
+  let (ex, X') ← X.lift maxLvl
+  let (ey, Y') ← Y.lift maxLvl
+  let e' ← mkKernelLift X Y X' Y' ex ey e
   return (e', ← mkEqRefl e')
 
 initialize registerLiftExpr liftKernel
 
 /-- The finisher for kernels: `κ = η ↔ κ.lift = η.lift`. -/
 def finisherKernel (κ η : Expr) (maxLvl : Level) : MetaM Expr := do
-  let (X, Y, xLvl, yLvl) ← getTypesFromKernel κ
-  let ex ← constructMeasurableEquiv X xLvl maxLvl
-  let ey ← constructMeasurableEquiv Y yLvl maxLvl
-  mkAppM ``lift_congr #[ex, ey, κ, η]
+  let (X, Y) ← getCarriersFromKernel κ
+  let (ex, X') ← X.lift maxLvl
+  let (ey, Y') ← Y.lift maxLvl
+  return mkAppN (mkConst ``lift_congr [X.2, Y.2, maxLvl]) <|
+    (← liftLemmaArgs X Y X' Y' ex ey) ++ #[κ, η]
 
 initialize registerLiftFinisher finisherKernel
 

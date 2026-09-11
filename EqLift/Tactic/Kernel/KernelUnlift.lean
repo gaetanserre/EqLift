@@ -5,7 +5,6 @@ Authors: Gaëtan Serré
 -/
 module
 
-public import EqLift.Kernel.Lift
 public import EqLift.Tactic.Unlift
 public import EqLift.Tactic.Kernel.KernelLift
 
@@ -15,35 +14,41 @@ public import EqLift.Tactic.Kernel.KernelLift
 This file contains functions that propagate the unlifting of lifted kernel expressions through
 several operators and primitives, and constructs the necessary proofs for the `unlift_eq` tactic.
 Each function returns the unlifted expression `e'` together with a proof of `e = e'.lift`, built by
-congruence from the compatibility lemmas of `Kernel.lift`.
+congruence from the compatibility lemmas of `Kernel.lift` (`comp_lift`, `parallelComp_lift`, ...).
 -/
 
 public meta section
 
 open Lean Meta Parser.Tactic ProbabilityTheory ProbabilityTheory.Kernel
 
-/-- Unlifts a binary kernel operation `e = op κ' η'` by unlifting the inner kernels. `mkLemma`
-receives the unlifted kernels `κ η` and must return a proof of `op κ.lift η.lift = (op κ η).lift`.
--/
-def unliftBinary (e : Expr) (op : Name) (κ' η' : Expr) (eLvl : Level)
-    (mkLemma : Expr → Expr → MetaM Expr) : MetaM (Expr × Expr) := do
+/-- Unlifts a binary kernel operation `e = op κ' η'` by unlifting the inner kernels. `mkOp` builds
+the operation from the unlifted kernels `κ η`, and `mkPf` must return a proof of
+`op κ.lift η.lift = (op κ η).lift`. -/
+def unliftBinary (e κ' η' : Expr) (eLvl : Level) (mkOp : Expr → Expr → MetaM Expr)
+    (mkPf : Expr → Expr → MetaM Expr) : MetaM (Expr × Expr) := do
   let (κ, pκ) ← unliftExpr κ' eLvl
   let (η, pη) ← unliftExpr η' eLvl
   let h ← mkCongr (← mkCongrArg e.appFn!.appFn! pκ) pη
-  return (← mkAppM op #[κ, η], ← mkEqTrans h (← mkLemma κ η))
+  return (← mkOp κ η, ← mkEqTrans h (← mkPf κ η))
 
 /-- Unlifts a composition of kernels by unlifting the inner kernels. -/
 def unliftComposition (e : Expr) (eLvl : Level) : MetaM (Expr × Expr) := do
   unless e.isAppOf ``Kernel.comp do
     throwError "Expected a composition of kernels, but got {e}."
   let args := e.getAppArgs
-  unliftBinary e ``Kernel.comp args[args.size - 2]! args[args.size - 1]! eLvl fun η κ => do
-    let (X, Y, xLvl, yLvl) ← getTypesFromKernel η
-    let (Z, _, tLvl, _) ← getTypesFromKernel κ
-    let ex ← constructMeasurableEquiv X xLvl eLvl
-    let ey ← constructMeasurableEquiv Y yLvl eLvl
-    let ez ← constructMeasurableEquiv Z tLvl eLvl
-    mkAppM ``comp_lift #[ex, ey, ez, η, κ]
+  unliftBinary e args[args.size - 2]! args[args.size - 1]! eLvl
+    (fun η κ => do
+      let (X, Y) ← getCarriersFromKernel η
+      let (Z, _) ← getCarriersFromKernel κ
+      mkKernelComp Z X Y η κ)
+    fun η κ => do
+      let (X, Y) ← getCarriersFromKernel η
+      let (Z, _) ← getCarriersFromKernel κ
+      let (ex, X') ← X.lift eLvl
+      let (ey, Y') ← Y.lift eLvl
+      let (ez, Z') ← Z.lift eLvl
+      return mkAppN (mkConst ``comp_lift [X.2, Y.2, Z.2, eLvl]) <|
+        (← liftLemmaArgs X Y X' Y' ex ey) ++ #[Z.1, ← Z.inst, Z'.1, ← Z'.inst, ez, η, κ]
 
 initialize registerUnliftExpr unliftComposition
 
@@ -52,14 +57,21 @@ def unliftParallelComp (e : Expr) (eLvl : Level) : MetaM (Expr × Expr) := do
   unless e.isAppOf ``Kernel.parallelComp do
     throwError "Expected a parallel composition of kernels, but got {e}."
   let args := e.getAppArgs
-  unliftBinary e ``Kernel.parallelComp args[args.size - 2]! args[args.size - 1]! eLvl fun κ η => do
-    let (X, Y, xLvl, yLvl) ← getTypesFromKernel κ
-    let (Z, T, zLvl, tLvl) ← getTypesFromKernel η
-    let ex ← constructMeasurableEquiv X xLvl eLvl
-    let ey ← constructMeasurableEquiv Y yLvl eLvl
-    let ez ← constructMeasurableEquiv Z zLvl eLvl
-    let et ← constructMeasurableEquiv T tLvl eLvl
-    mkAppM ``parallelComp_lift #[ex, ey, ez, et, κ, η]
+  unliftBinary e args[args.size - 2]! args[args.size - 1]! eLvl
+    (fun κ η => do
+      let (X, Y) ← getCarriersFromKernel κ
+      let (Z, T) ← getCarriersFromKernel η
+      mkKernelParallelComp X Y Z T κ η)
+    fun κ η => do
+      let (X, Y) ← getCarriersFromKernel κ
+      let (Z, T) ← getCarriersFromKernel η
+      let (ex, X') ← X.lift eLvl
+      let (ey, Y') ← Y.lift eLvl
+      let (ez, Z') ← Z.lift eLvl
+      let (et, T') ← T.lift eLvl
+      return mkAppN (mkConst ``parallelComp_lift [X.2, Y.2, Z.2, eLvl, T.2]) <|
+        (← liftLemmaArgs X Y X' Y' ex ey) ++
+          #[Z.1, ← Z.inst, T.1, ← T.inst, Z'.1, ← Z'.inst, T'.1, ← T'.inst, ez, et, κ, η]
 
 initialize registerUnliftExpr unliftParallelComp
 
@@ -68,13 +80,19 @@ def unliftProd (e : Expr) (eLvl : Level) : MetaM (Expr × Expr) := do
   unless e.isAppOf ``Kernel.prod do
     throwError "Expected a product of kernels, but got {e}."
   let args := e.getAppArgs
-  unliftBinary e ``Kernel.prod args[args.size - 2]! args[args.size - 1]! eLvl fun κ η => do
-    let (X, Y, xLvl, yLvl) ← getTypesFromKernel κ
-    let (_, Z, _, zLvl) ← getTypesFromKernel η
-    let ex ← constructMeasurableEquiv X xLvl eLvl
-    let ey ← constructMeasurableEquiv Y yLvl eLvl
-    let ez ← constructMeasurableEquiv Z zLvl eLvl
-    mkAppM ``prod_lift #[ex, ey, ez, κ, η]
+  unliftBinary e args[args.size - 2]! args[args.size - 1]! eLvl
+    (fun κ η => do
+      let (X, Y) ← getCarriersFromKernel κ
+      let (_, Z) ← getCarriersFromKernel η
+      mkKernelProd X Y Z κ η)
+    fun κ η => do
+      let (X, Y) ← getCarriersFromKernel κ
+      let (_, Z) ← getCarriersFromKernel η
+      let (ex, X') ← X.lift eLvl
+      let (ey, Y') ← Y.lift eLvl
+      let (ez, Z') ← Z.lift eLvl
+      return mkAppN (mkConst ``prod_lift [X.2, Y.2, Z.2, eLvl]) <|
+        (← liftLemmaArgs X Y X' Y' ex ey) ++ #[Z.1, ← Z.inst, Z'.1, ← Z'.inst, ez, κ, η]
 
 initialize registerUnliftExpr unliftProd
 
@@ -83,25 +101,34 @@ def unliftCompProd (e : Expr) (eLvl : Level) : MetaM (Expr × Expr) := do
   unless e.isAppOf ``Kernel.compProd do
     throwError "Expected a composition of product of kernels, but got {e}."
   let args := e.getAppArgs
-  unliftBinary e ``Kernel.compProd args[args.size - 2]! args[args.size - 1]! eLvl fun κ η => do
-    let (X, Y, xLvl, yLvl) ← getTypesFromKernel κ
-    let (_, Z, _, zLvl) ← getTypesFromKernel η
-    let ex ← constructMeasurableEquiv X xLvl eLvl
-    let ey ← constructMeasurableEquiv Y yLvl eLvl
-    let ez ← constructMeasurableEquiv Z zLvl eLvl
-    mkAppM ``compProd_lift #[ex, ey, ez, κ, η]
+  unliftBinary e args[args.size - 2]! args[args.size - 1]! eLvl
+    (fun κ η => do
+      let (X, Y) ← getCarriersFromKernel κ
+      let (_, Z) ← getCarriersFromKernel η
+      mkKernelCompProd X Y Z κ η)
+    fun κ η => do
+      let (X, Y) ← getCarriersFromKernel κ
+      let (_, Z) ← getCarriersFromKernel η
+      let (ex, X') ← X.lift eLvl
+      let (ey, Y') ← Y.lift eLvl
+      let (ez, Z') ← Z.lift eLvl
+      return mkAppN (mkConst ``compProd_lift [X.2, Y.2, Z.2, eLvl]) <|
+        (← liftLemmaArgs X Y X' Y' ex ey) ++ #[Z.1, ← Z.inst, Z'.1, ← Z'.inst, ez, κ, η]
 
 initialize registerUnliftExpr unliftCompProd
+
+/-- The original carrier of a lifted carrier. -/
+def unliftCarrier (X' : Expr) : MetaM Carrier := getOriginalType X'
 
 /-- Unlifts the identity kernel by unlifting the carrier type. -/
 def unliftId (e : Expr) (eLvl : Level) : MetaM (Expr × Expr) := do
   unless e.isAppOf ``Kernel.id do
     throwError "Expected the identity kernel, but got {e}."
-  let (X', _, _, _) ← getTypesFromKernel e
-  let (X, xLvl) ← getOriginalType X'
-  let ex ← constructMeasurableEquiv X xLvl eLvl
-  let mX ← synthInstance (mkApp (mkConst ``MeasurableSpace [xLvl]) X)
-  return (← mkAppOptM ``Kernel.id #[X, mX], ← mkAppM ``id_lift #[ex])
+  let (X', _) ← getCarriersFromKernel e
+  let X ← unliftCarrier X'.1
+  let (ex, X'') ← X.lift eLvl
+  let pf := mkAppN (mkConst ``id_lift [X.2, eLvl]) #[X.1, ← X.inst, X''.1, ← X''.inst, ex]
+  return (← mkKernelId X, pf)
 
 initialize registerUnliftExpr unliftId
 
@@ -109,11 +136,12 @@ initialize registerUnliftExpr unliftId
 def unliftDiscard (e : Expr) (eLvl : Level) : MetaM (Expr × Expr) := do
   unless e.isAppOf ``Kernel.discard do
     throwError "Expected the discard kernel, but got {e}."
-  let (X', _, _, _) ← getTypesFromKernel e
-  let (X, xLvl) ← getOriginalType X'
-  let ex ← constructMeasurableEquiv X xLvl eLvl
-  let discard_unlift_proof ← mkAppM' (mkConst ``discard_lift [xLvl, eLvl, Level.zero]) #[ex]
-  return (← mkAppOptM' (mkConst ``Kernel.discard [xLvl, 0]) #[X, none], discard_unlift_proof)
+  let (X', _) ← getCarriersFromKernel e
+  let X ← unliftCarrier X'.1
+  let (ex, X'') ← X.lift eLvl
+  let pf := mkAppN (mkConst ``discard_lift [X.2, eLvl, Level.zero])
+    #[X.1, ← X.inst, X''.1, ← X''.inst, ex]
+  return (← mkKernelDiscard X 0, pf)
 
 initialize registerUnliftExpr unliftDiscard
 
@@ -121,10 +149,11 @@ initialize registerUnliftExpr unliftDiscard
 def unliftCopy (e : Expr) (eLvl : Level) : MetaM (Expr × Expr) := do
   unless e.isAppOf ``Kernel.copy do
     throwError "Expected the copy kernel, but got {e}."
-  let (X', _, _, _) ← getTypesFromKernel e
-  let (X, xLvl) ← getOriginalType X'
-  let ex ← constructMeasurableEquiv X xLvl eLvl
-  return (← mkAppOptM ``Kernel.copy #[X, none], ← mkAppM ``copy_lift #[ex])
+  let (X', _) ← getCarriersFromKernel e
+  let X ← unliftCarrier X'.1
+  let (ex, X'') ← X.lift eLvl
+  let pf := mkAppN (mkConst ``copy_lift [X.2, eLvl]) #[X.1, ← X.inst, X''.1, ← X''.inst, ex]
+  return (← mkKernelCopy X, pf)
 
 initialize registerUnliftExpr unliftCopy
 
@@ -133,11 +162,12 @@ def unliftSwap (e : Expr) (eLvl : Level) : MetaM (Expr × Expr) := do
   unless e.isAppOf ``Kernel.swap do
     throwError "Expected the swap kernel, but got {e}."
   let args := e.getAppArgs
-  let (X, xLvl) ← getOriginalType args[0]!
-  let (Y, yLvl) ← getOriginalType args[1]!
-  let ex ← constructMeasurableEquiv X xLvl eLvl
-  let ey ← constructMeasurableEquiv Y yLvl eLvl
-  return (← mkAppOptM ``Kernel.swap #[X, Y, none, none], ← mkAppM ``swap_lift #[ex, ey])
+  let X ← unliftCarrier args[0]!
+  let Y ← unliftCarrier args[1]!
+  let (ex, X') ← X.lift eLvl
+  let (ey, Y') ← Y.lift eLvl
+  let pf := mkAppN (mkConst ``swap_lift [X.2, Y.2, eLvl]) (← liftLemmaArgs X Y X' Y' ex ey)
+  return (← mkKernelSwap X Y, pf)
 
 initialize registerUnliftExpr unliftSwap
 

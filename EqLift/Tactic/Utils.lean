@@ -7,6 +7,7 @@ module
 
 public meta import Lean.Meta.AppBuilder
 public meta import Lean.Meta.Transform
+public import EqLift.Tactic.Cache
 
 /-!
 # Lift and Unlift utilities
@@ -66,6 +67,7 @@ and transformed expressions. -/
 def transformEquality (unlift : Bool) (getLvl : Expr → MetaM Level)
     (lift_ref : IO.Ref (Array liftMetadata)) (finisher_ref : IO.Ref (Array finisherMetadata))
     (eq : Expr) : MetaM (Expr × Expr) := do
+  resetTransformCache
   let e ← whnfR <| ← zetaReduce <| ← instantiateMVars eq
   let e := e.consumeMData
   let lvl ← getLvl eq
