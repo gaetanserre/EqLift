@@ -47,8 +47,8 @@ def unliftComposition (e : Expr) (eLvl : Level) : MetaM (Expr × Expr) := do
       let (ex, X') ← X.lift eLvl
       let (ey, Y') ← Y.lift eLvl
       let (ez, Z') ← Z.lift eLvl
-      return mkAppN (mkConst ``comp_lift [X.2, Y.2, Z.2, eLvl]) <|
-        (← liftLemmaArgs X Y X' Y' ex ey) ++ #[Z.1, ← Z.inst, Z'.1, ← Z'.inst, ez, η, κ]
+      return mkAppN (mkConst ``comp_lift [X.lvl, Y.lvl, Z.lvl, eLvl]) <|
+        (← liftLemmaArgs X Y X' Y' ex ey) ++ #[Z.type, ← Z.inst, Z'.type, ← Z'.inst, ez, η, κ]
 
 initialize registerUnliftExpr unliftComposition
 
@@ -69,9 +69,9 @@ def unliftParallelComp (e : Expr) (eLvl : Level) : MetaM (Expr × Expr) := do
       let (ey, Y') ← Y.lift eLvl
       let (ez, Z') ← Z.lift eLvl
       let (et, T') ← T.lift eLvl
-      return mkAppN (mkConst ``parallelComp_lift [X.2, Y.2, Z.2, eLvl, T.2]) <|
+      return mkAppN (mkConst ``parallelComp_lift [X.lvl, Y.lvl, Z.lvl, eLvl, T.lvl]) <|
         (← liftLemmaArgs X Y X' Y' ex ey) ++
-          #[Z.1, ← Z.inst, T.1, ← T.inst, Z'.1, ← Z'.inst, T'.1, ← T'.inst, ez, et, κ, η]
+          #[Z.type, ← Z.inst, T.type, ← T.inst, Z'.type, ← Z'.inst, T'.type, ← T'.inst, ez, et, κ, η]
 
 initialize registerUnliftExpr unliftParallelComp
 
@@ -91,8 +91,8 @@ def unliftProd (e : Expr) (eLvl : Level) : MetaM (Expr × Expr) := do
       let (ex, X') ← X.lift eLvl
       let (ey, Y') ← Y.lift eLvl
       let (ez, Z') ← Z.lift eLvl
-      return mkAppN (mkConst ``prod_lift [X.2, Y.2, Z.2, eLvl]) <|
-        (← liftLemmaArgs X Y X' Y' ex ey) ++ #[Z.1, ← Z.inst, Z'.1, ← Z'.inst, ez, κ, η]
+      return mkAppN (mkConst ``prod_lift [X.lvl, Y.lvl, Z.lvl, eLvl]) <|
+        (← liftLemmaArgs X Y X' Y' ex ey) ++ #[Z.type, ← Z.inst, Z'.type, ← Z'.inst, ez, κ, η]
 
 initialize registerUnliftExpr unliftProd
 
@@ -112,22 +112,24 @@ def unliftCompProd (e : Expr) (eLvl : Level) : MetaM (Expr × Expr) := do
       let (ex, X') ← X.lift eLvl
       let (ey, Y') ← Y.lift eLvl
       let (ez, Z') ← Z.lift eLvl
-      return mkAppN (mkConst ``compProd_lift [X.2, Y.2, Z.2, eLvl]) <|
-        (← liftLemmaArgs X Y X' Y' ex ey) ++ #[Z.1, ← Z.inst, Z'.1, ← Z'.inst, ez, κ, η]
+      return mkAppN (mkConst ``compProd_lift [X.lvl, Y.lvl, Z.lvl, eLvl]) <|
+        (← liftLemmaArgs X Y X' Y' ex ey) ++ #[Z.type, ← Z.inst, Z'.type, ← Z'.inst, ez, κ, η]
 
 initialize registerUnliftExpr unliftCompProd
 
 /-- The original carrier of a lifted carrier. -/
-def unliftCarrier (X' : Expr) : MetaM Carrier := getOriginalType X'
+def unliftCarrier (X' : Expr) : MetaM Carrier := do
+  let (type, lvl) ← getOriginalType X'
+  return ⟨type, lvl⟩
 
 /-- Unlifts the identity kernel by unlifting the carrier type. -/
 def unliftId (e : Expr) (eLvl : Level) : MetaM (Expr × Expr) := do
   unless e.isAppOf ``Kernel.id do
     throwError "Expected the identity kernel, but got {e}."
   let (X', _) ← getCarriersFromKernel e
-  let X ← unliftCarrier X'.1
+  let X ← unliftCarrier X'.type
   let (ex, X'') ← X.lift eLvl
-  let pf := mkAppN (mkConst ``id_lift [X.2, eLvl]) #[X.1, ← X.inst, X''.1, ← X''.inst, ex]
+  let pf := mkAppN (mkConst ``id_lift [X.lvl, eLvl]) #[X.type, ← X.inst, X''.type, ← X''.inst, ex]
   return (← mkKernelId X, pf)
 
 initialize registerUnliftExpr unliftId
@@ -137,10 +139,10 @@ def unliftDiscard (e : Expr) (eLvl : Level) : MetaM (Expr × Expr) := do
   unless e.isAppOf ``Kernel.discard do
     throwError "Expected the discard kernel, but got {e}."
   let (X', _) ← getCarriersFromKernel e
-  let X ← unliftCarrier X'.1
+  let X ← unliftCarrier X'.type
   let (ex, X'') ← X.lift eLvl
-  let pf := mkAppN (mkConst ``discard_lift [X.2, eLvl, Level.zero])
-    #[X.1, ← X.inst, X''.1, ← X''.inst, ex]
+  let pf := mkAppN (mkConst ``discard_lift [X.lvl, eLvl, Level.zero])
+    #[X.type, ← X.inst, X''.type, ← X''.inst, ex]
   return (← mkKernelDiscard X 0, pf)
 
 initialize registerUnliftExpr unliftDiscard
@@ -150,9 +152,9 @@ def unliftCopy (e : Expr) (eLvl : Level) : MetaM (Expr × Expr) := do
   unless e.isAppOf ``Kernel.copy do
     throwError "Expected the copy kernel, but got {e}."
   let (X', _) ← getCarriersFromKernel e
-  let X ← unliftCarrier X'.1
+  let X ← unliftCarrier X'.type
   let (ex, X'') ← X.lift eLvl
-  let pf := mkAppN (mkConst ``copy_lift [X.2, eLvl]) #[X.1, ← X.inst, X''.1, ← X''.inst, ex]
+  let pf := mkAppN (mkConst ``copy_lift [X.lvl, eLvl]) #[X.type, ← X.inst, X''.type, ← X''.inst, ex]
   return (← mkKernelCopy X, pf)
 
 initialize registerUnliftExpr unliftCopy
@@ -166,7 +168,7 @@ def unliftSwap (e : Expr) (eLvl : Level) : MetaM (Expr × Expr) := do
   let Y ← unliftCarrier args[1]!
   let (ex, X') ← X.lift eLvl
   let (ey, Y') ← Y.lift eLvl
-  let pf := mkAppN (mkConst ``swap_lift [X.2, Y.2, eLvl]) (← liftLemmaArgs X Y X' Y' ex ey)
+  let pf := mkAppN (mkConst ``swap_lift [X.lvl, Y.lvl, eLvl]) (← liftLemmaArgs X Y X' Y' ex ey)
   return (← mkKernelSwap X Y, pf)
 
 initialize registerUnliftExpr unliftSwap

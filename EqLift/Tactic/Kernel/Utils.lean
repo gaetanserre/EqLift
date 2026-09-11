@@ -34,11 +34,15 @@ public meta section
 open Lean Meta ProbabilityTheory Elab Term
 
 /-- A measurable space: the carrier type and its universe level. -/
-abbrev Carrier := Expr × Level
+structure Carrier where
+  /-- The carrier type. -/
+  type : Expr
+  /-- The universe level of the carrier type. -/
+  lvl : Level
 
 /-- The `MeasurableSpace` instance of a carrier (cached). -/
 def Carrier.inst (c : Carrier) : MetaM Expr :=
-  synthInstanceCached (mkApp (mkConst ``MeasurableSpace [c.2]) c.1)
+  synthInstanceCached (mkApp (mkConst ``MeasurableSpace [c.lvl]) c.type)
 
 /-- Extract `(X, Y, u, v)` from an expression of type `Kernel X Y`. -/
 def getTypesFromKernel (κ : Expr) : MetaM (Expr × Expr × Level × Level) := do
@@ -54,7 +58,7 @@ def getTypesFromKernel (κ : Expr) : MetaM (Expr × Expr × Level × Level) := d
 /-- Extract the source and target carriers of a kernel. -/
 def getCarriersFromKernel (κ : Expr) : MetaM (Carrier × Carrier) := do
   let (X, Y, xLvl, yLvl) ← getTypesFromKernel κ
-  return ((X, xLvl), (Y, yLvl))
+  return (⟨X, xLvl⟩, ⟨Y, yLvl⟩)
 
 /-- Build the measurable equivalence `X' ≃ᵐ X` between the lift `X'` of `e` to the universe
 `maxLvl` and `e` itself, recursively on products. Returns the equivalence and `X'`. -/
@@ -71,19 +75,19 @@ partial def constructMeasurableEquiv (e : Expr) (eLevel maxLvl : Level) : MetaM 
       let (ex, X') ← constructMeasurableEquiv X xLvl maxLvl
       let (ey, Y') ← constructMeasurableEquiv Y yLvl maxLvl
       let equiv := mkAppN (mkConst ``MeasurableEquiv.prodCongr [maxLvl, xLvl, maxLvl, yLvl])
-        #[X', X, Y', Y, ← Carrier.inst (X', maxLvl), ← Carrier.inst (X, xLvl),
-          ← Carrier.inst (Y', maxLvl), ← Carrier.inst (Y, yLvl), ex, ey]
+        #[X', X, Y', Y, ← Carrier.inst ⟨X', maxLvl⟩, ← Carrier.inst ⟨X, xLvl⟩,
+          ← Carrier.inst ⟨Y', maxLvl⟩, ← Carrier.inst ⟨Y, yLvl⟩, ex, ey]
       return #[equiv, mkApp2 (mkConst ``Prod [maxLvl, maxLvl]) X' Y']
     | _ =>
       let equiv := mkAppN (mkConst ``MeasurableEquiv.ulift [eLevel, maxLvl])
-        #[e, ← Carrier.inst (e, eLevel)]
+        #[e, ← Carrier.inst ⟨e, eLevel⟩]
       return #[equiv, mkApp (mkConst ``ULift [maxLvl, eLevel]) e]
   return (res[0]!, res[1]!)
 
 /-- Same as `constructMeasurableEquiv`, for a carrier. -/
 def Carrier.lift (c : Carrier) (maxLvl : Level) : MetaM (Expr × Carrier) := do
-  let (equiv, c') ← constructMeasurableEquiv c.1 c.2 maxLvl
-  return (equiv, (c', maxLvl))
+  let (equiv, c') ← constructMeasurableEquiv c.type c.lvl maxLvl
+  return (equiv, ⟨c', maxLvl⟩)
 
 /-- Get the original type from a lifted type. -/
 partial def getOriginalType (t : Expr) : MetaM (Expr × Level) := do
@@ -105,43 +109,43 @@ partial def getOriginalType (t : Expr) : MetaM (Expr × Level) := do
 
 /-- `η ∘ₖ κ` with `κ : Kernel X Y` and `η : Kernel Y Z`. -/
 def mkKernelComp (X Y Z : Carrier) (η κ : Expr) : MetaM Expr := do
-  return mkAppN (mkConst ``Kernel.comp [X.2, Y.2, Z.2])
-    #[X.1, Y.1, Z.1, ← X.inst, ← Y.inst, ← Z.inst, η, κ]
+  return mkAppN (mkConst ``Kernel.comp [X.lvl, Y.lvl, Z.lvl])
+    #[X.type, Y.type, Z.type, ← X.inst, ← Y.inst, ← Z.inst, η, κ]
 
 /-- `κ ∥ₖ η` with `κ : Kernel X Y` and `η : Kernel Z T`. -/
 def mkKernelParallelComp (X Y Z T : Carrier) (κ η : Expr) : MetaM Expr := do
-  return mkAppN (mkConst ``Kernel.parallelComp [X.2, Y.2, Z.2, T.2])
-    #[X.1, Y.1, Z.1, T.1, ← X.inst, ← Y.inst, ← Z.inst, ← T.inst, κ, η]
+  return mkAppN (mkConst ``Kernel.parallelComp [X.lvl, Y.lvl, Z.lvl, T.lvl])
+    #[X.type, Y.type, Z.type, T.type, ← X.inst, ← Y.inst, ← Z.inst, ← T.inst, κ, η]
 
 /-- `κ ×ₖ η` with `κ : Kernel X Y` and `η : Kernel X Z`. -/
 def mkKernelProd (X Y Z : Carrier) (κ η : Expr) : MetaM Expr := do
-  return mkAppN (mkConst ``Kernel.prod [X.2, Y.2, Z.2])
-    #[X.1, Y.1, ← X.inst, ← Y.inst, Z.1, ← Z.inst, κ, η]
+  return mkAppN (mkConst ``Kernel.prod [X.lvl, Y.lvl, Z.lvl])
+    #[X.type, Y.type, ← X.inst, ← Y.inst, Z.type, ← Z.inst, κ, η]
 
 /-- `κ ⊗ₖ η` with `κ : Kernel X Y` and `η : Kernel (X × Y) Z`. -/
 def mkKernelCompProd (X Y Z : Carrier) (κ η : Expr) : MetaM Expr := do
-  return mkAppN (mkConst ``Kernel.compProd [X.2, Y.2, Z.2])
-    #[X.1, Y.1, Z.1, ← X.inst, ← Y.inst, ← Z.inst, κ, η]
+  return mkAppN (mkConst ``Kernel.compProd [X.lvl, Y.lvl, Z.lvl])
+    #[X.type, Y.type, Z.type, ← X.inst, ← Y.inst, ← Z.inst, κ, η]
 
 /-- `Kernel.id : Kernel X X`. -/
 def mkKernelId (X : Carrier) : MetaM Expr := do
-  return mkAppN (mkConst ``Kernel.id [X.2]) #[X.1, ← X.inst]
+  return mkAppN (mkConst ``Kernel.id [X.lvl]) #[X.type, ← X.inst]
 
 /-- `Kernel.copy X`. -/
 def mkKernelCopy (X : Carrier) : MetaM Expr := do
-  return mkAppN (mkConst ``Kernel.copy [X.2]) #[X.1, ← X.inst]
+  return mkAppN (mkConst ``Kernel.copy [X.lvl]) #[X.type, ← X.inst]
 
 /-- `Kernel.discard X : Kernel X PUnit.{punitLvl + 1}`. -/
 def mkKernelDiscard (X : Carrier) (punitLvl : Level) : MetaM Expr := do
-  return mkAppN (mkConst ``Kernel.discard [X.2, punitLvl]) #[X.1, ← X.inst]
+  return mkAppN (mkConst ``Kernel.discard [X.lvl, punitLvl]) #[X.type, ← X.inst]
 
 /-- `Kernel.swap X Y`. -/
 def mkKernelSwap (X Y : Carrier) : MetaM Expr := do
-  return mkAppN (mkConst ``Kernel.swap [X.2, Y.2]) #[X.1, Y.1, ← X.inst, ← Y.inst]
+  return mkAppN (mkConst ``Kernel.swap [X.lvl, Y.lvl]) #[X.type, Y.type, ← X.inst, ← Y.inst]
 
 /-- `κ.lift (ex := ex) (ey := ey) : Kernel X' Y'` with `κ : Kernel X Y`. -/
 def mkKernelLift (X Y X' Y' : Carrier) (ex ey κ : Expr) : MetaM Expr := do
-  return mkAppN (mkConst ``Kernel.lift [X.2, Y.2, X'.2])
-    #[X.1, ← X.inst, Y.1, ← Y.inst, X'.1, ← X'.inst, Y'.1, ← Y'.inst, ex, ey, κ]
+  return mkAppN (mkConst ``Kernel.lift [X.lvl, Y.lvl, X'.lvl])
+    #[X.type, ← X.inst, Y.type, ← Y.inst, X'.type, ← X'.inst, Y'.type, ← Y'.inst, ex, ey, κ]
 
 end
