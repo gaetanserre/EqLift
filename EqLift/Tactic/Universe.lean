@@ -19,6 +19,7 @@ It includes conversion functions between levels and syntax, and universe level c
 ## Main declarations
 
 * `collectExprUniverses`: recursively collects universe levels from expressions.
+* `collectEqUniverses`: collects the universe levels of both sides of an equality.
 * `getUniverseFromEq`: extracts the universe level from the left-hand side of an equality
 expression.
 -/
@@ -47,11 +48,20 @@ def collectExprUniverses (e : Expr) : MetaM (List Level) := do
   let e ← zetaReduce e
   return (collectExprUniverses.aux e).eraseDups
 
-/-- Compute the maximum universe level from a list of levels. -/
+/-- Collect the universe levels of both sides of an equality. The `Eq` constant itself is skipped:
+its level is the sort of the type of the equality, which is one universe above the terms. -/
+def collectEqUniverses (eq : Expr) : MetaM (List Level) := do
+  let e ← whnfR <| ← zetaReduce <| ← instantiateMVars eq
+  let some (_, lhs, rhs) := e.consumeMData.eq? | throwError "Expected an equality, got: {eq}."
+  return ((← collectExprUniverses lhs) ++ (← collectExprUniverses rhs)).eraseDups
+
+/-- Compute the maximum universe level from a list of levels. The result is normalized, so that
+the universe levels of the lifted expressions stay small and readable
+(e.g. `max u v` instead of `max (max u v) (max u v)`). -/
 def computeMaxLevel (levels : List Level) : MetaM Level :=
   match levels with
     | [] => throwError "Expected at least one universe level, got an empty list."
-    | head :: tail => pure (tail.foldl Level.max head)
+    | head :: tail => pure (tail.foldl Level.max head).normalize
 
 /-- Extract the universe level from the left side of an equality expression. -/
 def getLevelFromEq (eq : Expr) : MetaM Level := do

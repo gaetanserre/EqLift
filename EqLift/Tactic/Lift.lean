@@ -45,8 +45,7 @@ def liftExpr := fun a b c ↦ transformExpr a b c liftImplRef
 /-- Gets the maximum universe level from an equality expression by collecting all universe levels
 from the left-hand side and right-hand side of the equality. -/
 def getMaxLvl (eq : Expr) : MetaM Level := do
-  let univs ← collectExprUniverses eq
-  computeMaxLevel univs
+  computeMaxLevel (← collectEqUniverses eq)
 
 /-- Lifts an equality expression to a common universe level using the registered lifting functions
 and finisher functions. -/
@@ -55,9 +54,7 @@ def liftEquality := transformEquality getMaxLvl liftImplRef liftFinisherRef
 /-- Same as `liftEquality`, but allows specifying a universe level that will be taken into account
 when computing the maximum universe level. -/
 def liftEqualityWithLevel (Lvl : Level) (eq : Expr) : MetaM (Expr × Expr) := do
-  let getMaxLvl := fun e ↦ do
-    let univs ← collectExprUniverses e
-    computeMaxLevel <| Lvl :: univs
+  let getMaxLvl := fun e ↦ do computeMaxLevel <| Lvl :: (← collectEqUniverses e)
   transformEquality getMaxLvl liftImplRef liftFinisherRef eq
 
 /-- Transforms an equality expression by lifting both sides to a common universe level.
