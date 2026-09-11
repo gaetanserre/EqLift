@@ -71,7 +71,8 @@ def unliftParallelComp (e : Expr) (eLvl : Level) : MetaM (Expr × Expr) := do
       let (et, T') ← T.lift eLvl
       return mkAppN (mkConst ``parallelComp_lift [X.lvl, Y.lvl, Z.lvl, eLvl, T.lvl]) <|
         (← liftLemmaArgs X Y X' Y' ex ey) ++
-          #[Z.type, ← Z.inst, T.type, ← T.inst, Z'.type, ← Z'.inst, T'.type, ← T'.inst, ez, et, κ, η]
+          #[Z.type, ← Z.inst, T.type, ← T.inst, Z'.type, ← Z'.inst, T'.type, ← T'.inst,
+            ez, et, κ, η]
 
 initialize registerUnliftExpr unliftParallelComp
 
