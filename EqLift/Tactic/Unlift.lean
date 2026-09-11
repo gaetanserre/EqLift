@@ -25,27 +25,26 @@ open Lean Elab Tactic Meta Parser.Tactic
 
 private initialize unliftImplRef : IO.Ref (Array liftMetadata) ← IO.mkRef #[]
 
-/-- Registers a new unlifting function for expressions. The function should take an expression, a
-universe level (most likely the common universe level where the equality is being lifted), and a
-list of proofs, and return a new expression and an updated list of proofs. -/
+/-- Registers a new unlifting function for expressions. The function should take an expression and
+the common universe level where the equality has been lifted, and return the unlifted expression
+`e'` together with a proof of `e = lift e'`. -/
 def registerUnliftExpr (f : liftMetadata) : IO Unit := do unliftImplRef.modify (·.push f)
 
 private initialize unliftFinisherRef : IO.Ref (Array finisherMetadata) ← IO.mkRef #[]
 
-/-- Registers a new finisher function for constructing the final proof of equality after unlifting
-inner expressions. The function should take the original left-hand side and right-hand side, the
-transformed left-hand side and right-hand side, the common universe level, and return a proof of
-equality. -/
+/-- Registers a new finisher function. The function should take the unlifted left-hand side and
+right-hand side `a b` and the common universe level, and return a proof of `a = b ↔ lift a = lift b`.
+-/
 def registerUnliftFinisher (f : finisherMetadata) : IO Unit := do
   unliftFinisherRef.modify (·.push f)
 
 /-- Unlifts an expression that has been lifted to a common universe level using the registered
 unlifting functions. -/
-def unliftExpr := fun a b c ↦ transformExpr a b c unliftImplRef
+def unliftExpr := fun a b ↦ transformExpr a b unliftImplRef
 
 /-- Unlifts an equality expression that has been lifted to a common universe level using the
 registered unlifting functions and finisher functions. -/
-def unliftEquality := transformEquality getLevelFromEq unliftImplRef unliftFinisherRef
+def unliftEquality := transformEquality true getLevelFromEq unliftImplRef unliftFinisherRef
 
 /-- Performs the inverse operation of `lift_eq`, transforming an equality that has been lifted to a
 common universe level back to its original form.

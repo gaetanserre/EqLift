@@ -5,87 +5,75 @@ Authors: Gaëtan Serré
 -/
 module
 
-public meta import Lean.Meta.Tactic.Replace
-public meta import Lean.Meta.Tactic.Rewrite
+public meta import Lean.Meta.AppBuilder
+public meta import Lean.Meta.Transform
 
 /-!
-
 # Lift and Unlift utilities
 
 This file provides utility functions for lifting and unlifting equalities.
 
+A lifting (resp. unlifting) function transforms an expression `e` into an expression `e'` living
+in a common universe level (resp. in the original universe levels), together with a proof that
+the expression in the common universe level is the lift of the other one: `e' = lift e` when
+lifting, `e = lift e'` when unlifting. These proofs are combined by congruence to obtain the
+equivalence between the original equality and the transformed one.
 -/
 
 public meta section
 
 open Lean Elab Tactic Meta Parser.Tactic
 
-/-- A type alias for lifting/unlifting functions. -/
-abbrev liftMetadata := Expr → Level → List Expr → MetaM (Expr × List Expr)
+/-- A type alias for lifting/unlifting functions. Given an expression and the common universe
+level, return the transformed expression together with a proof that the expression living in the
+common universe level is the lift of the other one. -/
+abbrev liftMetadata := Expr → Level → MetaM (Expr × Expr)
 
-/-- A type alias for finisher functions that construct the final proof of equality after lifting/
-unlifting inner expressions. -/
-abbrev finisherMetadata := Expr → Expr → Expr → Expr → Level → MetaM Expr
+/-- A type alias for finisher functions. Given the two sides `a b` of an equality living in the
+original universe levels and the common universe level, return a proof of
+`a = b ↔ lift a = lift b`. -/
+abbrev finisherMetadata := Expr → Expr → Level → MetaM Expr
 
-/-- Transforms an expression using the registered lifting/unlifting functions given in `impl_ref`. Returns the first successful transformation along with the updated list of proofs. -/
-def transformExpr (e : Expr) (maxLvl : Level) (proofs : List Expr)
-    (impl_ref : IO.Ref (Array (liftMetadata))) : MetaM (Expr × List Expr) := do
+/-- Transforms an expression using the registered lifting/unlifting functions given in `impl_ref`.
+Returns the first successful transformation along with its proof. -/
+def transformExpr (e : Expr) (maxLvl : Level) (impl_ref : IO.Ref (Array liftMetadata)) :
+    MetaM (Expr × Expr) := do
   let handlers ← impl_ref.get
-  let (lift_expr, proofs) ← handlers.firstM (fun h => h e maxLvl proofs) <|> do
-    throwError "No transform handler found for {e}."
-  return (lift_expr, proofs)
+  handlers.firstM (fun h => h e maxLvl) <|> throwError "No transform handler found for {e}."
 
-/-- Rewrites the type of `mvarId` at the `n`-th occurrence using `heq`.-/
-def Lean.MVarId.nthRewrite (mvarId : MVarId) (n : Nat) (heq : Expr) : MetaM MVarId := do
-  let r ← mvarId.rewrite (← mvarId.getType) heq (config := { occs := .pos [n] })
-  mvarId.replaceTargetEq r.eNew r.eqProof
+/-- From `pl : a = c` and `pr : b = d`, build a proof of `(a = b) = (c = d)`. -/
+def mkEqCongr (pl pr : Expr) : MetaM Expr := do
+  let some (α, _, _) := (← inferType pl).eq? | throwError "Expected an equality, got: {pl}."
+  let eqFn := mkApp (mkConst ``Eq [← getLevel α]) α
+  mkCongr (← mkCongrArg eqFn pl) pr
 
-/-- Constructs a proof of equality between the original and transformed expressions using the provided proofs and finisher functions. -/
-def constructProof (eqProofType lhs rhs lhs_t rhs_t : Expr) (maxLvl : Level) (proofs : List Expr)
+/-- Constructs a proof of `(lhs = rhs) = (lhs_t = rhs_t)` from the proofs `pl pr` returned by the
+lifting/unlifting functions for both sides and a finisher. When lifting, `pl : lhs_t = lift lhs`;
+when unlifting, `pl : lhs = lift lhs_t` (and similarly for `pr`). -/
+def constructProof (unlift : Bool) (lhs rhs lhs_t rhs_t pl pr : Expr) (maxLvl : Level)
     (finisher_ref : IO.Ref (Array finisherMetadata)) : MetaM Expr := do
-  let mvar ← mkFreshExprSyntheticOpaqueMVar eqProofType
-  let mvarId := mvar.mvarId!
-  let propext := mkConst ``propext
-  match ← mvarId.apply propext with
-  | [mvarId] =>
-    let proofs := proofs.reverse
-    let mut mvarId := mvarId
-    for proof in proofs do
-      mvarId ← mvarId.nthRewrite 1 proof
-    let handlers ← finisher_ref.get
-    let e ← handlers.firstM (fun h => do
-      let finisher ← h lhs rhs lhs_t rhs_t maxLvl
-      unless ← isDefEq (← mvarId.getType) (← inferType finisher) do
-        throwError "Type mismatch: expected {← mvarId.getType}, got {← inferType finisher}."
-      mvarId.assign finisher
-      instantiateMVars mvar
-    ) <|> do
-      throwError m!"No finisher found for {eqProofType}."
-    return e
-  | _ =>
-    throwError "Failed to apply propext while building kernel_lift equivalence proof for
-      {eqProofType}."
+  let (a, b) := if unlift then (lhs_t, rhs_t) else (lhs, rhs)
+  let handlers ← finisher_ref.get
+  let iff ← handlers.firstM (fun h => h a b maxLvl) <|> throwError "No finisher found for {a} = {b}."
+  let congr ← mkEqCongr pl pr
+  let propext ← mkPropExt iff
+  if unlift then mkEqTrans congr (← mkEqSymm propext)
+  else mkEqTrans propext (← mkEqSymm congr)
 
 /-- Lifts or unlifts an equality expression by transforming both sides using the registered lifting/
 unlifting functions. Returns the transformed equality and a proof of equality between the original
 and transformed expressions. -/
-def transformEquality (getLvl : Expr → MetaM Level) (lift_ref : IO.Ref (Array liftMetadata))
-    (finisher_ref : IO.Ref (Array finisherMetadata)) (eq : Expr) : MetaM (Expr × Expr) := do
+def transformEquality (unlift : Bool) (getLvl : Expr → MetaM Level)
+    (lift_ref : IO.Ref (Array liftMetadata)) (finisher_ref : IO.Ref (Array finisherMetadata))
+    (eq : Expr) : MetaM (Expr × Expr) := do
   let e ← whnfR <| ← zetaReduce <| ← instantiateMVars eq
   let e := e.consumeMData
   let lvl ← getLvl eq
   let some (_, lhs, rhs) := e.eq? | throwError "Expected an equality, got: {e}."
-  let (lhs_transformed, proofs) ← transformExpr lhs lvl [] lift_ref
-  let (rhs_transformed, proofs) ← transformExpr rhs lvl proofs lift_ref
+  let (lhs_transformed, pl) ← transformExpr lhs lvl lift_ref
+  let (rhs_transformed, pr) ← transformExpr rhs lvl lift_ref
   let eq_transformed ← mkEq lhs_transformed rhs_transformed
-  let eq_proof_type ← mkEq eq eq_transformed
-  let proof ← constructProof
-    eq_proof_type
-    lhs rhs
-    lhs_transformed rhs_transformed
-    lvl
-    proofs
-    finisher_ref
+  let proof ← constructProof unlift lhs rhs lhs_transformed rhs_transformed pl pr lvl finisher_ref
   return (eq_transformed, proof)
 
 end
