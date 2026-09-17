@@ -6,7 +6,7 @@ Tactics for unifying universe levels of equality statements in Lean 4.
 
 Eq-Lift provides two complementary tactics for working with equality statements:
 
-- **The `lift_eq` tactic**: Lifts both sides of an equality statement to a common universe level. The tactic automatically propagates the lifting throughout operators and primitives, ensuring that the entire expression is consistently lifted. It is made to be modular and can be extended to handle new types, operators, and primitives as needed.
+- **The `lift_eq` tactic**: Lifts both sides of an equality statement to a common universe level. The tactic automatically propagates the lifting throughout operators and primitives, ensuring that the entire expression is consistently lifted. It is made to be modular and can be extended to handle new types, operators, and primitives as needed. When it is applied at several locations (e.g. `lift_eq at h ⊢`), all the equalities are lifted to the same universe level, so that the lifted equalities can be used to rewrite each other.
 
 - **The `unlift_eq` tactic**: Reverses the lifting process. Transforms lifted equality statements back to their original universe levels, ensuring that the expressions are returned to their initial form.
 
@@ -25,10 +25,10 @@ git = "https://github.com/gaetanserre/EqLift"
 If you're using a `lakefile.lean`, add:
 
 ```lean
-require eqlift from git "https://github.com/gaetanserre/EqLift"@"latest"
+require eqlift from git "https://github.com/gaetanserre/EqLift"@"main"
 ```
 
-See [`Tests.lean`](KernelLiftTests/Tests.lean) for examples of using the available tactics.
+See [`Tests.lean`](EqLiftTests/Tests.lean) for examples of using the available tactics.
 
 See also [Kernel-Hom](https://github.com/gaetanserre/KernelHom) for a deeper use of the kernel lifting tactic in the context of translating kernel equalities into categorical equalities.
 
