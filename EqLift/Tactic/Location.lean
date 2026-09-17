@@ -15,12 +15,24 @@ specified by location patterns, following the standard Lean syntax (like in `rw`
 
 ## Main declarations
 
+* `locationTypes`: the types of the goals and hypotheses at specified locations.
 * `applyLocTactic`: applies a tactic to goals and hypotheses at specified locations.
 -/
 
 public meta section
 
 open Lean Elab Tactic Meta
+
+/-- The types of the hypotheses and of the goal at a location. -/
+def locationTypes (loc : Location) : TacticM (Array Expr) := withMainContext do
+  match loc with
+  | .targets hyps target =>
+    let types ← hyps.mapM fun h ↦ do (← getFVarId h).getType
+    if target then return types.push (← getMainTarget) else return types
+  | .wildcard =>
+    let types := (← getLCtx).foldl (init := #[]) fun types decl ↦
+      if decl.isImplementationDetail then types else types.push decl.type
+    return types.push (← getMainTarget)
 
 /-- Replace an equality in a goal or hypothesis with a transformed expression, using a provided
 transformation function. -/

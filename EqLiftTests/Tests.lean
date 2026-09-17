@@ -73,4 +73,9 @@ lemma parallelComp_self_comp_copy₀ [IsDeterministic κ] :
   lift_eq
   exact parallelComp_self_comp_copy
 
+example {κ : Kernel X Y} {η : Kernel Y Z} {ζ : Kernel X Z} {ξ : Kernel Z T} (h : η ∘ₖ κ = ζ) :
+    ξ ∘ₖ (η ∘ₖ κ) = ξ ∘ₖ ζ := by
+  lift_eq at h ⊢
+  rw [h]
+
 end ProbabilityTheory.Kernel

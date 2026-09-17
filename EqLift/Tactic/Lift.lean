@@ -56,6 +56,22 @@ def liftEqualityWithLevel (Lvl : Level) (eq : Expr) : MetaM (Expr × Expr) := do
   let getMaxLvl := fun e ↦ do computeMaxLevel <| Lvl :: (← collectEqUniverses e)
   transformEquality false getMaxLvl liftImplRef liftFinisherRef eq
 
+/-- Lifts the equalities at a location, and applies the transformation `transform` built from the
+lifting function. When the location contains several equalities, they are all lifted to a common
+universe level (the maximum of their universe levels), so that the lifted equalities can be used
+together. -/
+def liftEqualityAt (loc : Location)
+    (transform : (Expr → MetaM (Expr × Expr)) → Expr → MetaM (Expr × Expr) := id) :
+    TacticM Unit := do
+  let types ← locationTypes loc
+  if types.size ≤ 1 then
+    return ← applyLocTactic loc (transform liftEquality)
+  let lvls ← types.foldlM (init := []) fun lvls type ↦ do
+    try return lvls ++ (← collectEqUniverses type) catch _ => return lvls
+  if lvls.isEmpty then
+    return ← applyLocTactic loc (transform liftEquality)
+  applyLocTactic loc <| transform (liftEqualityWithLevel (← computeMaxLevel lvls))
+
 /-- Transforms an equality expression by lifting both sides to a common universe level.
 
 The tactic supports location specifiers like `rw` or `simp`:
@@ -64,11 +80,13 @@ The tactic supports location specifiers like `rw` or `simp`:
 * `lift_eq at h₁ h₂` — applies to multiple hypotheses
 * `lift_eq at h ⊢` — applies to hypothesis `h` and the goal
 * `lift_eq at *` — applies to all hypotheses and the goal
+
+All the equalities are lifted to a common universe level, so that the lifted equalities can be used
+to rewrite each other.
 -/
 syntax (name := EqLift) "lift_eq" (ppSpace location)? : tactic
 
 elab_rules : tactic
-  | `(tactic| lift_eq $[$loc]?) =>
-    expandOptLocation (mkOptionalNode loc) |> applyLocTactic <| liftEquality
+  | `(tactic| lift_eq $[$loc]?) => liftEqualityAt <| expandOptLocation (mkOptionalNode loc)
 
 end
