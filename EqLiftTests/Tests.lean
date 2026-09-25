@@ -78,4 +78,15 @@ example {κ : Kernel X Y} {η : Kernel Y Z} {ζ : Kernel X Z} {ξ : Kernel Z T} 
   lift_eq at h ⊢
   rw [h]
 
+/- The sides of these equalities contain no constant, so that the universe levels are read from
+their type. -/
+example {κ η : Kernel X Y} (h : κ = η) : κ = η := by
+  lift_eq at h ⊢
+  exact h
+
+example {κ η : Kernel X Y} (h : κ = η) : κ = η := by
+  lift_eq at h
+  unlift_eq at h
+  exact h
+
 end ProbabilityTheory.Kernel

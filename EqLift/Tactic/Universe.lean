@@ -48,12 +48,14 @@ def collectExprUniverses (e : Expr) : MetaM (List Level) := do
   let e ← zetaReduce e
   return (collectExprUniverses.aux e).eraseDups
 
-/-- Collect the universe levels of both sides of an equality. The `Eq` constant itself is skipped:
-its level is the sort of the type of the equality, which is one universe above the terms. -/
+/-- Collect the universe levels of both sides of an equality and of their type. The `Eq` constant
+itself is skipped: its level is the sort of the type of the equality, which is one universe above
+the terms. -/
 def collectEqUniverses (eq : Expr) : MetaM (List Level) := do
   let e ← whnfR <| ← zetaReduce <| ← instantiateMVars eq
-  let some (_, lhs, rhs) := e.consumeMData.eq? | throwError "Expected an equality, got: {eq}."
-  return ((← collectExprUniverses lhs) ++ (← collectExprUniverses rhs)).eraseDups
+  let some (α, lhs, rhs) := e.consumeMData.eq? | throwError "Expected an equality, got: {eq}."
+  return ((← collectExprUniverses α) ++ (← collectExprUniverses lhs) ++
+    (← collectExprUniverses rhs)).eraseDups
 
 /-- Compute the maximum universe level from a list of levels. The result is normalized, so that
 the universe levels of the lifted expressions stay small and readable
