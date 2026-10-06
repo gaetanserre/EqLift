@@ -46,7 +46,7 @@ def Carrier.inst (c : Carrier) : MetaM Expr :=
 
 /-- Extract `(X, Y, u, v)` from an expression of type `Kernel X Y`. -/
 def getTypesFromKernel (κ : Expr) : MetaM (Expr × Expr × Level × Level) := do
-  let κType ← inferTypeCached κ
+  let κType ← inferType κ
   match κType.getAppFn with
   | Expr.const ``Kernel univs =>
     let args := κType.getAppArgs
@@ -103,7 +103,7 @@ partial def getOriginalType (t : Expr) : MetaM (Expr × Level) := do
     let (Y, yLvl) ← getOriginalType args[1]!
     return (mkApp2 (mkConst ``Prod [xLvl, yLvl]) X Y, .max xLvl yLvl)
   | _ =>
-    return (t, ← getDecLevel (← inferTypeCached t))
+    return (t, ← getDecLevel (← inferType t))
 
 /-! ### Explicit constructors -/
 

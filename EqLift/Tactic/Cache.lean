@@ -12,14 +12,13 @@ public meta import Std.Data.HashMap
 # Cache for the lifting/unlifting transformations
 
 Transforming an equality repeatedly synthesizes the same instances (`MeasurableSpace X`,
-`IsSFiniteKernel κ`, ...) and rebuilds the same terms (measurable equivalences, types of
-kernels, ...). This file provides a cache, reset at the beginning of each transformation, that
-memoizes these computations.
+`IsSFiniteKernel κ`, ...) and rebuilds the same terms (measurable equivalences, lifted types,
+...). This file provides a cache, reset at the beginning of each transformation, that memoizes these
+computations.
 
 ## Main declarations
 
 * `synthInstanceCached`: `synthInstance` with memoization.
-* `inferTypeCached`: `inferType` with memoization.
 * `memoized`: memoization of an arbitrary computation returning expressions, keyed by a tag and an
   expression.
 * `resetTransformCache`: empties the cache.
@@ -33,8 +32,6 @@ open Lean Meta
 structure TransformCache where
   /-- Synthesized instances, keyed by the class application. -/
   insts : Std.HashMap Expr Expr := {}
-  /-- Inferred types, keyed by the expression. -/
-  types : Std.HashMap Expr Expr := {}
   /-- Memoized computations, keyed by a tag and an expression. -/
   memo : Std.HashMap (Name × Expr) (Array Expr) := {}
   deriving Inhabited
@@ -52,15 +49,6 @@ def synthInstanceCached (type : Expr) : MetaM Expr := do
     let inst ← synthInstance type
     transformCacheRef.modify fun c => { c with insts := c.insts.insert type inst }
     return inst
-
-/-- `inferType` with memoization. -/
-def inferTypeCached (e : Expr) : MetaM Expr := do
-  match (← transformCacheRef.get).types[e]? with
-  | some type => return type
-  | none =>
-    let type ← inferType e
-    transformCacheRef.modify fun c => { c with types := c.types.insert e type }
-    return type
 
 /-- Memoizes the computation `f`, keyed by `tag` and `key`. -/
 def memoized (tag : Name) (key : Expr) (f : MetaM (Array Expr)) : MetaM (Array Expr) := do
