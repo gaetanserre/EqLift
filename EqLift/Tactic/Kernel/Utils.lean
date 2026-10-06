@@ -76,12 +76,11 @@ partial def liftCarrier (w : Level) (X : Expr) :
       return #[q(ULift.{w} $X), mX', q(@MeasurableEquiv.ulift.{x, w} $X $mX)]
   return ⟨x, X, mX, res[0]!, res[1]!, res[2]!⟩
 
-/-- Get the original type from a lifted type. `PUnit` is unlifted to `PUnit.{1}`, the target of
-`Kernel.discard`. -/
+/-- Get the original type from a lifted type. `PUnit` is unlifted to `Unit`. -/
 partial def getOriginalType (t : Expr) : MetaM (Expr × Level) := do
   let t' ← whnf t
   match_expr t' with
-  | PUnit => return (mkConst ``PUnit [Level.one], 0)
+  | PUnit => return (mkConst ``Unit, 0)
   | ULift X =>
     let .const _ [_, x] := t'.getAppFn | throwError "Expected a lifted type, got: {t}."
     return (X, x)
