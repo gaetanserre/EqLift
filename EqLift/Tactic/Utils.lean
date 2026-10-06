@@ -30,10 +30,10 @@ level, return the transformed expression together with a proof that the expressi
 common universe level is the lift of the other one. -/
 abbrev liftMetadata := Expr → Level → MetaM (Expr × Expr)
 
-/-- A type alias for finisher functions. Given the two sides `a b` of an equality living in the
-original universe levels and the common universe level, return a proof of
-`a = b ↔ lift a = lift b`. -/
-abbrev finisherMetadata := Expr → Expr → Level → MetaM Expr
+/-- A type alias for finisher functions. Given the proofs `pl : a' = lift a` and `pr : b' = lift b`
+returned by the lifting/unlifting functions for both sides of an equality `a = b` living in the
+original universe levels, return a proof of `(a = b) = (a' = b')`. -/
+abbrev finisherMetadata := Expr → Expr → MetaM Expr
 
 /-- Transforms an expression using the registered lifting/unlifting functions given in `impl_ref`.
 Returns the first successful transformation along with its proof. -/
@@ -42,24 +42,14 @@ def transformExpr (e : Expr) (maxLvl : Level) (impl_ref : IO.Ref (Array liftMeta
   let handlers ← impl_ref.get
   handlers.firstM (fun h => h e maxLvl) <|> throwError "No transform handler found for {e}."
 
-/-- From `pl : a = c` and `pr : b = d`, build a proof of `(a = b) = (c = d)`. -/
-def mkEqCongr (pl pr : Expr) : MetaM Expr := do
-  let some (α, _, _) := (← inferType pl).eq? | throwError "Expected an equality, got: {pl}."
-  let eqFn := mkApp (mkConst ``Eq [← getLevel α]) α
-  mkCongr (← mkCongrArg eqFn pl) pr
-
 /-- Constructs a proof of `(lhs = rhs) = (lhs_t = rhs_t)` from the proofs `pl pr` returned by the
 lifting/unlifting functions for both sides and a finisher. When lifting, `pl : lhs_t = lift lhs`;
 when unlifting, `pl : lhs = lift lhs_t` (and similarly for `pr`). -/
-def constructProof (unlift : Bool) (lhs rhs lhs_t rhs_t pl pr : Expr) (maxLvl : Level)
-    (finisher_ref : IO.Ref (Array finisherMetadata)) : MetaM Expr := do
-  let (a, b) := if unlift then (lhs_t, rhs_t) else (lhs, rhs)
+def constructProof (unlift : Bool) (pl pr : Expr) (finisher_ref : IO.Ref (Array finisherMetadata)) :
+    MetaM Expr := do
   let handlers ← finisher_ref.get
-  let iff ← handlers.firstM (fun h => h a b maxLvl) <|> throwError "No finisher found for {a} = {b}."
-  let congr ← mkEqCongr pl pr
-  let propext ← mkPropExt iff
-  if unlift then mkEqTrans congr (← mkEqSymm propext)
-  else mkEqTrans propext (← mkEqSymm congr)
+  let pf ← handlers.firstM (fun h => h pl pr) <|> throwError "No finisher found for {pl}, {pr}."
+  if unlift then mkEqSymm pf else return pf
 
 /-- Lifts or unlifts an equality expression by transforming both sides using the registered lifting/
 unlifting functions. Returns the transformed equality and a proof of equality between the original
@@ -75,7 +65,7 @@ def transformEquality (unlift : Bool) (getLvl : Expr → MetaM Level)
   let (lhs_transformed, pl) ← transformExpr lhs lvl lift_ref
   let (rhs_transformed, pr) ← transformExpr rhs lvl lift_ref
   let eq_transformed ← mkEq lhs_transformed rhs_transformed
-  let proof ← constructProof unlift lhs rhs lhs_transformed rhs_transformed pl pr lvl finisher_ref
+  let proof ← constructProof unlift pl pr finisher_ref
   return (eq_transformed, proof)
 
 end

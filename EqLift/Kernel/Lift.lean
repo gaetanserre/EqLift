@@ -19,10 +19,11 @@ in the same universe level, as long as there are measurable equivalences between
 * `Kernel.lift`: the main definition of the lift operation.
 * `Kernel.isSFinite_lift`: a kernel is s-finite if and only if its lift is s-finite.
 * `Kernel.lift_congr`: two kernels are equal if and only if their lifts are equal.
-* `Kernel.lift_comp`: the lift of a composition is the composition of the lifts.
+* `Kernel.comp_lift`: the lift of a composition is the composition of the lifts.
 * `Kernel.parallelComp_lift`: the lift of a parallel composition is the parallel composition of the
 lifts.
 * `Kernel.prod_lift`: the lift of a product is the product of the lifts.
+* `Kernel.comp_lift_of_eq`, ...: the same lemmas, with the lifts of the subterms as hypotheses.
 -/
 
 @[expose] public section
@@ -214,5 +215,54 @@ instance {κ : Kernel X Y} [IsDeterministic κ] :
   parallelComp_self_comp_copy' := by
     rw [parallelComp_lift, copy_lift (ex := ex), copy_lift (ex := ey), comp_lift, comp_lift,
       ← lift_congr, κ.parallelComp_self_comp_copy]
+
+/-! ### Lifting lemmas with hypotheses
+
+The lifting lemmas above, with the lifts of the subterms given as hypotheses. They are used by the
+`lift_eq` and `unlift_eq` tactics, which lift (or unlift) a term from the lifts of its subterms, so
+that each step of the transformation is a single application of these lemmas. -/
+
+section OfEq
+
+variable {ex ey ez et}
+
+/-- The equivalence between an equality of kernels and the equality of their lifts `κ'` and `η'`,
+given by `lift_congr`. -/
+lemma lift_congr_of_eq {κ η : Kernel X Y} {κ' η' : Kernel X' Y'}
+    (hκ : κ' = κ.lift (ex := ex) (ey := ey)) (hη : η' = η.lift (ex := ex) (ey := ey)) :
+    (κ = η) = (κ' = η') := by
+  rw [hκ, hη, lift_congr ex ey]
+
+/-- The lift `η' ∘ₖ κ'` of a composition `η ∘ₖ κ`, from the lifts `η'` of `η` and `κ'` of `κ` (see
+`comp_lift`). -/
+lemma comp_lift_of_eq {η : Kernel X Y} {κ : Kernel Z X} {η' : Kernel X' Y'} {κ' : Kernel Z' X'}
+    (hη : η' = η.lift (ex := ex) (ey := ey)) (hκ : κ' = κ.lift (ex := ez) (ey := ex)) :
+    η' ∘ₖ κ' = (η ∘ₖ κ).lift (ex := ez) (ey := ey) := by
+  rw [hη, hκ, comp_lift]
+
+/-- The lift `κ' ∥ₖ η'` of a parallel composition `κ ∥ₖ η`, from the lifts `κ'` of `κ` and `η'` of
+`η` (see `parallelComp_lift`). -/
+lemma parallelComp_lift_of_eq {κ : Kernel X Y} {η : Kernel Z T} {κ' : Kernel X' Y'}
+    {η' : Kernel Z' T'} (hκ : κ' = κ.lift (ex := ex) (ey := ey))
+    (hη : η' = η.lift (ex := ez) (ey := et)) :
+    κ' ∥ₖ η' = lift (ex := ex.prodCongr ez) (ey := ey.prodCongr et) (κ ∥ₖ η) := by
+  rw [hκ, hη, parallelComp_lift]
+
+/-- The lift `κ' ×ₖ η'` of a product `κ ×ₖ η`, from the lifts `κ'` of `κ` and `η'` of `η` (see
+`prod_lift`). -/
+lemma prod_lift_of_eq {κ : Kernel X Y} {η : Kernel X Z} {κ' : Kernel X' Y'} {η' : Kernel X' Z'}
+    (hκ : κ' = κ.lift (ex := ex) (ey := ey)) (hη : η' = η.lift (ex := ex) (ey := ez)) :
+    κ' ×ₖ η' = lift (ex := ex) (ey := ey.prodCongr ez) (κ ×ₖ η) := by
+  rw [hκ, hη, prod_lift]
+
+/-- The lift `κ' ⊗ₖ η'` of a composition-product `κ ⊗ₖ η`, from the lifts `κ'` of `κ` and `η'` of
+`η` (see `compProd_lift`). -/
+lemma compProd_lift_of_eq {κ : Kernel X Y} {η : Kernel (X × Y) Z} {κ' : Kernel X' Y'}
+    {η' : Kernel (X' × Y') Z'} (hκ : κ' = κ.lift (ex := ex) (ey := ey))
+    (hη : η' = η.lift (ex := ex.prodCongr ey) (ey := ez)) :
+    κ' ⊗ₖ η' = lift (ex := ex) (ey := ey.prodCongr ez) (κ ⊗ₖ η) := by
+  rw [hκ, hη, compProd_lift]
+
+end OfEq
 
 end ProbabilityTheory.Kernel

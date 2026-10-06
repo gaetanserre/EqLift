@@ -32,9 +32,9 @@ def registerLiftExpr (f : liftMetadata) : IO Unit := do liftImplRef.modify (·.p
 
 private initialize liftFinisherRef : IO.Ref (Array (finisherMetadata)) ← IO.mkRef #[]
 
-/-- Registers a new finisher function. The function should take the original left-hand side and
-right-hand side `a b` and the common universe level, and return a proof of `a = b ↔ lift a = lift b`.
--/
+/-- Registers a new finisher function. The function should take the proofs `pl : a' = lift a` and
+`pr : b' = lift b` of the lifts of both sides of an equality `a = b`, and return a proof of
+`(a = b) = (a' = b')`. -/
 def registerLiftFinisher (f : finisherMetadata) : IO Unit := do
   liftFinisherRef.modify (·.push f)
 

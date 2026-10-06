@@ -7,6 +7,7 @@ module
 
 public meta import Lean.Meta.SynthInstance
 public meta import Std.Data.HashMap
+public meta import Qq
 
 /-!
 # Cache for the lifting/unlifting transformations
@@ -18,7 +19,7 @@ computations.
 
 ## Main declarations
 
-* `synthInstanceCached`: `synthInstance` with memoization.
+* `synthInstanceCached`, `synthInstanceQCached`: `synthInstance` with memoization.
 * `memoized`: memoization of an arbitrary computation returning expressions, keyed by a tag and an
   expression.
 * `resetTransformCache`: empties the cache.
@@ -26,7 +27,7 @@ computations.
 
 public meta section
 
-open Lean Meta
+open Lean Meta Qq
 
 /-- The cache of the lifting/unlifting transformations. -/
 structure TransformCache where
@@ -49,6 +50,10 @@ def synthInstanceCached (type : Expr) : MetaM Expr := do
     let inst ← synthInstance type
     transformCacheRef.modify fun c => { c with insts := c.insts.insert type inst }
     return inst
+
+/-- `synthInstanceQ` with memoization. -/
+def synthInstanceQCached {u : Level} (α : Q(Sort u)) : MetaM Q($α) :=
+  synthInstanceCached α
 
 /-- Memoizes the computation `f`, keyed by `tag` and `key`. -/
 def memoized (tag : Name) (key : Expr) (f : MetaM (Array Expr)) : MetaM (Array Expr) := do
