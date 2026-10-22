@@ -59,7 +59,6 @@ def transformEquality (unlift : Bool) (getLvl : Expr → MetaM Level)
     (eq : Expr) : MetaM (Expr × Expr) := do
   resetTransformCache
   let e ← whnfR <| ← zetaReduce <| ← instantiateMVars eq
-  let e := e.consumeMData
   let lvl ← getLvl eq
   let some (_, lhs, rhs) := e.eq? | throwError "Expected an equality, got: {e}."
   let (lhs_transformed, pl) ← transformExpr lhs lvl lift_ref

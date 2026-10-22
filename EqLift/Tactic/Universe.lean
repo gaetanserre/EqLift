@@ -53,7 +53,7 @@ itself is skipped: its level is the sort of the type of the equality, which is o
 the terms. -/
 def collectEqUniverses (eq : Expr) : MetaM (List Level) := do
   let e ← whnfR <| ← zetaReduce <| ← instantiateMVars eq
-  let some (α, lhs, rhs) := e.consumeMData.eq? | throwError "Expected an equality, got: {eq}."
+  let some (α, lhs, rhs) := e.eq? | throwError "Expected an equality, got: {eq}."
   return ((← collectExprUniverses α) ++ (← collectExprUniverses lhs) ++
     (← collectExprUniverses rhs)).eraseDups
 
@@ -68,6 +68,5 @@ def computeMaxLevel (levels : List Level) : MetaM Level :=
 /-- Extract the universe level from the left side of an equality expression. -/
 def getLevelFromEq (eq : Expr) : MetaM Level := do
   let eq ← whnf (← zetaReduce (← instantiateMVars eq))
-  let eq := eq.consumeMData
   let some (_, lhs, _) := eq.eq? | throwError "Expected an equality, got: {eq}."
   getDecLevel (← inferType lhs)
