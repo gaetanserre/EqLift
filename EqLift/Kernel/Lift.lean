@@ -8,6 +8,7 @@ module
 public import EqLift.ForMathlib.Kernel
 public import EqLift.ForMathlib.MeasurableEquiv
 public import Mathlib.Probability.Kernel.Composition.CompProd
+import all Mathlib.Probability.Kernel.Composition.CompProd
 
 /-!
 # Kernel Lift
@@ -65,7 +66,7 @@ lemma isSFinite_lift (κ : Kernel X Y) :
     · simp only [κs']
       ext a s hs
       replace h := DFunLike.congr (x := ey.symm '' s) (DFunLike.congr (x := ex.symm a) h rfl) rfl
-      rw [sum_apply, Measure.sum_apply] at h ⊢
+      rw [Kernel.sum_apply, Measure.sum_apply] at h ⊢
       · rw [lift_apply'] at h
         · convert h with x
           · simp
@@ -73,7 +74,7 @@ lemma isSFinite_lift (κ : Kernel X Y) :
             simp
           · simp only [coe_comap, Function.comp_apply]
             rw [map_apply' _ ey.measurable _ hs, image_symm]
-        all_goals measurability
+        measurability
       all_goals measurability
 
 instance (κ : Kernel X Y) [IsSFiniteKernel κ] : IsSFiniteKernel (lift (ex := ex) (ey := ey) κ) :=
@@ -138,7 +139,7 @@ lemma id_lift : Kernel.id (α := X') = Kernel.id.lift (ex := ex) (ey := ex) := b
   simp only [id_apply]
   rw [Measure.dirac_apply' _ hs, Measure.dirac_apply']
   · exact Set.indicator_eq_indicator (by simp) rfl
-  all_goals measurability
+  measurability
 
 lemma discard_lift : discard.{_, w} X' = (discard X).lift (ex := ex) (ey := punit) := by
   ext _ _ hs
@@ -208,7 +209,6 @@ lemma compProd_lift (κ : Kernel X Y) (η : Kernel (X × Y) Z) :
       rw [deterministic_map (MeasurableEquiv.measurable _) (MeasurableEquiv.measurable _)]
       ext _ : 1
       simp [comap_apply, deterministic_apply, MeasurableEquiv.prodCongr, prodAssoc]
-
 
 instance {κ : Kernel X Y} [IsDeterministic κ] :
     IsDeterministic (κ.lift (ex := ex) (ey := ey)) where
