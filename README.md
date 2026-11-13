@@ -10,7 +10,7 @@ Eq-Lift provides two complementary tactics for working with equality statements:
 
 - **The `unlift_eq` tactic**: Reverses the lifting process. Transforms lifted equality statements back to their original universe levels, ensuring that the expressions are returned to their initial form.
 
-For now, these tactics work with probability kernels, but can easily be extended to other types of expressions. See [`KernelLift.lean`](EqLift/Tactic/Kernel/KernelLift.lean) and [`KernelUnlift.lean`](EqLift/Tactic/Kernel/KernelUnlift.lean) for a detailed implementation of the tactics for probability kernels.
+For now, these tactics work with transition kernels, but can easily be extended to other types of expressions. See [`KernelLift.lean`](EqLift/Tactic/Kernel/KernelLift.lean) and [`KernelUnlift.lean`](EqLift/Tactic/Kernel/KernelUnlift.lean) for a detailed implementation of the tactics for transition kernels.
 
 ## Usage
 
